@@ -1,1 +1,372 @@
 
+# Importing necessary libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+
+# Configure plot style and size
+sns.set(style="whitegrid")
+plt.rcParams['figure.figsize'] = (10, 6)
+
+# Load the dataset
+df = pd.read_csv('mymoviedb.csv', lineterminator='\n')
+print("Initial Dataset Sample:")
+print(df.head())
+
+# -------------------------------
+# 1. Data Cleaning & Handling Missing Values
+# -------------------------------
+
+# Check for missing values
+print("\nMissing Values in Each Column:\n", df.isnull().sum())
+
+# Convert 'Release_Date' to datetime, coerce errors to NaT
+df['Release_Date'] = pd.to_datetime(df['Release_Date'], errors='coerce')
+
+# Fill missing text columns with 'Not Available' where applicable
+df['Overview'] = df['Overview'].fillna('Not Available')
+df['Poster_Url'] = df['Poster_Url'].fillna('Not Available')
+
+# Drop rows with missing release dates (if any)
+missing_dates = df['Release_Date'].isnull().sum()
+print(f"\nNumber of rows with missing Release_Date: {missing_dates}")
+df.dropna(subset=['Release_Date'], inplace=True)
+
+print(f"Dataset shape after cleaning missing Release_Date: {df.shape}")
+
+# -------------------------------
+# 2. Feature Engineering & Selection
+# -------------------------------
+
+# Extract Year and Month from Release_Date
+df['Year'] = df['Release_Date'].dt.year
+df['Month'] = df['Release_Date'].dt.month
+
+# Count number of genres per movie (split by comma)
+df['Genre_Count'] = df['Genre'].apply(lambda x: len(str(x).split(',')))
+
+# Normalize 'Popularity' to 0-1 scale using MinMaxScaler
+scaler = MinMaxScaler()
+df['Popularity_Norm'] = scaler.fit_transform(df[['Popularity']])
+
+print("\nFeature Engineering completed: Added Year, Month, Genre_Count, and normalized Popularity.")
+
+# -------------------------------
+# 3. Data Integrity & Consistency Checks
+# -------------------------------
+
+# Check for duplicate rows
+duplicate_count = df.duplicated().sum()
+print(f"\nNumber of duplicate rows found: {duplicate_count}")
+
+# Drop duplicates if any
+if duplicate_count > 0:
+    df = df.drop_duplicates()
+    print(f"Dataset shape after removing duplicates: {df.shape}")
+
+# Ensure correct data types
+df['Vote_Count'] = df['Vote_Count'].astype(int)
+df['Vote_Average'] = df['Vote_Average'].astype(float)
+
+print("\nData types after conversion:")
+print(df.dtypes[['Vote_Count', 'Vote_Average']])
+
+# -------------------------------
+# 4. Summary Statistics & Insights
+# -------------------------------
+
+print("\nSummary Statistics for Numeric Columns:\n", df.describe())
+
+# Additional stats for engineered features
+print("\nSummary Statistics for Year, Month, Genre_Count:\n", df[['Year', 'Month', 'Genre_Count']].describe())
+
+# Most voted movie
+most_voted = df[df['Vote_Count'] == df['Vote_Count'].max()]
+print("\nMost Voted Movie:")
+print(most_voted[['Title', 'Vote_Count', 'Vote_Average']])
+print(f"'{most_voted.iloc[0]['Title']}' has the highest number of votes ({most_voted.iloc[0]['Vote_Count']}) with an average rating of {most_voted.iloc[0]['Vote_Average']}.")
+
+# -------------------------------
+# 5. Outlier Detection & Handling (Popularity)
+# -------------------------------
+
+# Calculate IQR for popularity
+Q1 = df['Popularity'].quantile(0.25)
+Q3 = df['Popularity'].quantile(0.75)
+IQR = Q3 - Q1
+
+# Define outlier bounds
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+
+# Filter out outliers
+df_no_outliers = df[(df['Popularity'] >= lower_bound) & (df['Popularity'] <= upper_bound)]
+
+print(f"\nOutlier detection using IQR on Popularity:")
+print(f"Lower bound: {lower_bound:.2f}, Upper bound: {upper_bound:.2f}")
+print(f"Number of outliers removed: {df.shape[0] - df_no_outliers.shape[0]}")
+
+# Use df_no_outliers for visualization where relevant
+
+# -------------------------------
+# 6. Initial Visual Representations of Key Findings
+# -------------------------------
+
+import os
+output_dir = 'outputs'
+os.makedirs(output_dir, exist_ok=True)
+
+# Popularity vs Vote Count Scatter Plot
+plt.figure()
+sns.scatterplot(data=df_no_outliers, x='Popularity', y='Vote_Count', hue='Genre_Count', palette='viridis', legend='full')
+plt.title("Popularity vs Vote Count (Colored by Genre Count)")
+plt.xlabel("Popularity")
+plt.ylabel("Vote Count")
+plt.legend(title='Genre Count', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.savefig(f'{output_dir}/popularity_vs_vote_count.png')
+plt.show()
+
+# Distribution of Number of Genres per Movie
+plt.figure()
+sns.countplot(data=df, x='Genre_Count')
+plt.title("Distribution of Number of Genres per Movie")
+plt.xlabel("Genre Count")
+plt.ylabel("Number of Movies")
+plt.savefig(f'{output_dir}/genre_count_distribution.png')
+plt.show()
+
+# Vote Average Distribution Histogram
+plt.figure()
+sns.histplot(df['Vote_Average'], bins=10, kde=True, color='skyblue')
+plt.title("Distribution of Vote Average")
+plt.xlabel("Vote Average")
+plt.ylabel("Frequency")
+plt.savefig(f'{output_dir}/vote_average_distribution.png')
+plt.show()
+
+# Correlation Heatmap for Numeric Features
+plt.figure()
+sns.heatmap(df[['Popularity', 'Vote_Count', 'Vote_Average', 'Genre_Count']].corr(), annot=True, cmap='coolwarm', fmt=".2f")
+plt.title("Correlation Heatmap")
+plt.savefig(f'{output_dir}/correlation_heatmap.png')
+plt.show()
+
+# Number of Movies Released Each Month
+plt.figure()
+sns.countplot(data=df, x='Month', order=sorted(df['Month'].unique()))
+plt.title("Number of Movies Released by Month")
+plt.xlabel("Month")
+plt.ylabel("Number of Movies")
+plt.savefig(f'{output_dir}/movies_released_per_month.png')
+plt.show()
+
+# Additional: Frequency of Each Genre (Explode genre list)
+all_genres = df['Genre'].str.split(',').explode().str.strip()
+genre_counts = all_genres.value_counts()
+
+plt.figure(figsize=(12,6))
+sns.barplot(x=genre_counts.index, y=genre_counts.values, palette='muted')
+plt.title("Frequency of Each Genre")
+plt.xlabel("Genre")
+plt.ylabel("Number of Movies")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig(f'{output_dir}/genre_frequency.png')
+plt.show()
+
+
+
+df.to_csv("data/mymoviedb_cleaned.csv", index=False)
+print("\nCleaned dataset saved as 'data/mymoviedb_cleaned.csv'")
+Initial Dataset Sample:
+  Release_Date                    Title  \
+0   2021-12-15  Spider-Man: No Way Home   
+1   2022-03-01               The Batman   
+2   2022-02-25                  No Exit   
+3   2021-11-24                  Encanto   
+4   2021-12-22           The King's Man   
+
+                                            Overview  Popularity  Vote_Count  \
+0  Peter Parker is unmasked and no longer able to...    5083.954        8940   
+1  In his second year of fighting crime, Batman u...    3827.658        1151   
+2  Stranded at a rest stop in the mountains durin...    2618.087         122   
+3  The tale of an extraordinary family, the Madri...    2402.201        5076   
+4  As a collection of history's worst tyrants and...    1895.511        1793   
+
+   Vote_Average Original_Language                               Genre  \
+0           8.3                en  Action, Adventure, Science Fiction   
+1           8.1                en            Crime, Mystery, Thriller   
+2           6.3                en                            Thriller   
+3           7.7                en  Animation, Comedy, Family, Fantasy   
+4           7.0                en    Action, Adventure, Thriller, War   
+
+                                          Poster_Url  
+0  https://image.tmdb.org/t/p/original/1g0dhYtq4i...  
+1  https://image.tmdb.org/t/p/original/74xTEgt7R3...  
+2  https://image.tmdb.org/t/p/original/vDHsLnOWKl...  
+3  https://image.tmdb.org/t/p/original/4j0PNHkMr5...  
+4  https://image.tmdb.org/t/p/original/aq4Pwv5Xeu...  
+
+Missing Values in Each Column:
+ Release_Date         0
+Title                0
+Overview             0
+Popularity           0
+Vote_Count           0
+Vote_Average         0
+Original_Language    0
+Genre                0
+Poster_Url           0
+dtype: int64
+
+Number of rows with missing Release_Date: 0
+Dataset shape after cleaning missing Release_Date: (9827, 9)
+
+Feature Engineering completed: Added Year, Month, Genre_Count, and normalized Popularity.
+
+Number of duplicate rows found: 0
+
+Data types after conversion:
+Vote_Count        int64
+Vote_Average    float64
+dtype: object
+
+Summary Statistics for Numeric Columns:
+                         Release_Date   Popularity    Vote_Count  Vote_Average  \
+count                           9827  9827.000000   9827.000000   9827.000000   
+mean   2006-09-23 11:05:51.317798144    40.326088   1392.805536      6.439534   
+min              1902-04-17 00:00:00    13.354000      0.000000      0.000000   
+25%              2000-10-18 00:00:00    16.128500    146.000000      5.900000   
+50%              2011-09-13 00:00:00    21.199000    444.000000      6.500000   
+75%              2017-11-22 00:00:00    35.191500   1376.000000      7.100000   
+max              2024-07-03 00:00:00  5083.954000  31077.000000     10.000000   
+std                              NaN   108.873998   2611.206907      1.129759   
+
+              Year        Month  Genre_Count  Popularity_Norm  
+count  9827.000000  9827.000000  9827.000000      9827.000000  
+mean   2006.203623     6.829348     2.624707         0.005319  
+min    1902.000000     1.000000     1.000000         0.000000  
+25%    2000.000000     4.000000     2.000000         0.000547  
+50%    2011.000000     7.000000     3.000000         0.001547  
+75%    2017.000000    10.000000     3.000000         0.004307  
+max    2024.000000    12.000000     8.000000         1.000000  
+std      15.685554     3.435706     1.122822         0.021472  
+
+Summary Statistics for Year, Month, Genre_Count:
+               Year        Month  Genre_Count
+count  9827.000000  9827.000000  9827.000000
+mean   2006.203623     6.829348     2.624707
+std      15.685554     3.435706     1.122822
+min    1902.000000     1.000000     1.000000
+25%    2000.000000     4.000000     2.000000
+50%    2011.000000     7.000000     3.000000
+75%    2017.000000    10.000000     3.000000
+max    2024.000000    12.000000     8.000000
+
+Most Voted Movie:
+         Title  Vote_Count  Vote_Average
+380  Inception       31077           8.4
+'Inception' has the highest number of votes (31077) with an average rating of 8.4.
+
+Outlier detection using IQR on Popularity:
+Lower bound: -12.47, Upper bound: 63.79
+Number of outliers removed: 1047
+
+
+C:\Users\91995\AppData\Local\Temp\ipykernel_9128\378233953.py:170: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  sns.barplot(x=genre_counts.index, y=genre_counts.values, palette='muted')
+---------------------------------------------------------------------------
+OSError                                   Traceback (most recent call last)
+Cell In[25], line 181
+    176 plt.savefig(f'{output_dir}/genre_frequency.png')
+    177 plt.show()
+--> 181 df.to_csv("data/mymoviedb_cleaned.csv", index=False)
+    182 print("\nCleaned dataset saved as 'data/mymoviedb_cleaned.csv'")
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\util\_decorators.py:333, in deprecate_nonkeyword_arguments.<locals>.decorate.<locals>.wrapper(*args, **kwargs)
+    327 if len(args) > num_allow_args:
+    328     warnings.warn(
+    329         msg.format(arguments=_format_argument_list(allow_args)),
+    330         FutureWarning,
+    331         stacklevel=find_stack_level(),
+    332     )
+--> 333 return func(*args, **kwargs)
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\core\generic.py:3967, in NDFrame.to_csv(self, path_or_buf, sep, na_rep, float_format, columns, header, index, index_label, mode, encoding, compression, quoting, quotechar, lineterminator, chunksize, date_format, doublequote, escapechar, decimal, errors, storage_options)
+   3956 df = self if isinstance(self, ABCDataFrame) else self.to_frame()
+   3958 formatter = DataFrameFormatter(
+   3959     frame=df,
+   3960     header=header,
+   (...)   3964     decimal=decimal,
+   3965 )
+-> 3967 return DataFrameRenderer(formatter).to_csv(
+   3968     path_or_buf,
+   3969     lineterminator=lineterminator,
+   3970     sep=sep,
+   3971     encoding=encoding,
+   3972     errors=errors,
+   3973     compression=compression,
+   3974     quoting=quoting,
+   3975     columns=columns,
+   3976     index_label=index_label,
+   3977     mode=mode,
+   3978     chunksize=chunksize,
+   3979     quotechar=quotechar,
+   3980     date_format=date_format,
+   3981     doublequote=doublequote,
+   3982     escapechar=escapechar,
+   3983     storage_options=storage_options,
+   3984 )
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\io\formats\format.py:1014, in DataFrameRenderer.to_csv(self, path_or_buf, encoding, sep, columns, index_label, mode, compression, quoting, quotechar, lineterminator, chunksize, date_format, doublequote, escapechar, errors, storage_options)
+    993     created_buffer = False
+    995 csv_formatter = CSVFormatter(
+    996     path_or_buf=path_or_buf,
+    997     lineterminator=lineterminator,
+   (...)   1012     formatter=self.fmt,
+   1013 )
+-> 1014 csv_formatter.save()
+   1016 if created_buffer:
+   1017     assert isinstance(path_or_buf, StringIO)
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\io\formats\csvs.py:251, in CSVFormatter.save(self)
+    247 """
+    248 Create the writer & save.
+    249 """
+    250 # apply compression and byte/text conversion
+--> 251 with get_handle(
+    252     self.filepath_or_buffer,
+    253     self.mode,
+    254     encoding=self.encoding,
+    255     errors=self.errors,
+    256     compression=self.compression,
+    257     storage_options=self.storage_options,
+    258 ) as handles:
+    259     # Note: self.encoding is irrelevant here
+    260     self.writer = csvlib.writer(
+    261         handles.handle,
+    262         lineterminator=self.lineterminator,
+   (...)    267         quotechar=self.quotechar,
+    268     )
+    270     self._save()
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\io\common.py:749, in get_handle(path_or_buf, mode, encoding, compression, memory_map, is_text, errors, storage_options)
+    747 # Only for write methods
+    748 if "r" not in mode and is_path:
+--> 749     check_parent_directory(str(handle))
+    751 if compression:
+    752     if compression != "zstd":
+    753         # compression libraries do not like an explicit text-mode
+
+File ~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pandas\io\common.py:616, in check_parent_directory(path)
+    614 parent = Path(path).parent
+    615 if not parent.is_dir():
+--> 616     raise OSError(rf"Cannot save file into a non-existent directory: '{parent}'")
+
+OSError: Cannot save file into a non-existent directory: 'data'
