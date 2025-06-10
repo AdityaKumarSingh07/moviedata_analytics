@@ -46,7 +46,7 @@ Recommended: virtual environment to isolate dependencies
 Setup
 Clone the repository:
 
-git clone https://github.com/adityagopal1807/moviedata_analytics.git
+git clone https://github.com/AdityaKumarSingh07/moviedata_analytics
 cd mymoviedb-analysis
 Create and activate a virtual environment:
 
